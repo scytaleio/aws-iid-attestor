@@ -118,35 +118,34 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 	config := &IIDAttestorConfig{}
 	hclTree, err := hcl.Parse(req.Configuration)
 	if err != nil {
-		resp.ErrorList = []string{err.Error()}
+		err := fmt.Errorf("Error parsing AWS IID Attestor configuration: %s", err)
 		return resp, err
 	}
 	err = hcl.DecodeObject(&config, hclTree)
 	if err != nil {
-		resp.ErrorList = []string{err.Error()}
+		err := fmt.Errorf("Error decoding AWS IID Attestor configuration: %s", err)		
 		return resp, err
 	}
-
-	// Set local vars from config struct
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
-	p.trustDomain = config.TrustDomain
 
 	block, _ := pem.Decode([]byte(awsCaCertPEM))
 
 	awsCaCert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		resp.ErrorList = []string{err.Error()}
+		err := fmt.Errorf("Error reading the AWS CA Certificate in the AWS IID Attestor: %s", err)				
 		return resp, err
 	}
 
-	var ok bool
-	p.awsCaCertPublicKey, ok = awsCaCert.PublicKey.(*rsa.PublicKey)
+	awsCaCertPublicKey, ok := awsCaCert.PublicKey.(*rsa.PublicKey)
 	if !ok {
-		resp.ErrorList = []string{err.Error()}
+		err := fmt.Errorf("Error extracting the AWS CA Certificate's public key in the AWS IID Attestor: %s", err)						
 		return resp, err
 	}
+
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	p.trustDomain = config.TrustDomain
+	p.awsCaCertPublicKey = awsCaCertPublicKey
 
 	return &spi.ConfigureResponse{}, nil
 }
