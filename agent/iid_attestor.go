@@ -16,7 +16,7 @@ import (
 	"github.com/spiffe/spire/proto/common"
 	spi "github.com/spiffe/spire/proto/common/plugin"
 
-	"github.com/spiffe/aws-iid-attestor/common"
+	aia "github.com/spiffe/aws-iid-attestor/common"
 )
 
 const (
@@ -36,11 +36,6 @@ type IIDAttestorPlugin struct {
 	awsInstanceId string
 
 	mtx *sync.RWMutex
-}
-
-type InstanceIdentityDocument struct {
-	InstanceId string `json:"instanceId" `
-	AccountId  string `json:"accountId"`
 }
 
 func (p *IIDAttestorPlugin) spiffeID() *url.URL {
@@ -66,11 +61,6 @@ func httpGetBytes(url string) ([]byte, error) {
 	return bytes, nil
 }
 
-type IidAttestedData struct {
-	Document  string `json:"document"`
-	Signature string `json:"signature"`
-}
-
 func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestationDataRequest) (*nodeattestor.FetchAttestationDataResponse, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
@@ -81,7 +71,7 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 
-	var doc InstanceIdentityDocument
+	var doc aia.InstanceIdentityDocument
 	err = json.Unmarshal(docBytes, &doc)
 	if err != nil {
 		err = fmt.Errorf("IID attestation attempted but an error occured while unmarshalling the IID: %v", err)

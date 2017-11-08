@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"net/url"
 	"path"
@@ -20,7 +19,7 @@ import (
 	spi "github.com/spiffe/spire/proto/common/plugin"
 	"github.com/spiffe/spire/proto/server/nodeattestor"
 
-	"github.com/spiffe/aws-iid-attestor/common"
+	aia "github.com/spiffe/aws-iid-attestor/common"
 )
 
 const awsCaCertPEM = `-----BEGIN CERTIFICATE-----
@@ -43,7 +42,7 @@ vSeDCOUMYQR7R9LINYwouHIziqQYMAkGByqGSM44BAMDLwAwLAIUWXBlk40xTwSw
 -----END CERTIFICATE-----
 `
 
-type IIDAttestorPlugin struct {
+type IIDAttestorConfig struct {
 	TrustDomain string `hcl:"trust_domain"`
 }
 
@@ -68,17 +67,16 @@ func (p *IIDAttestorPlugin) spiffeID(awsAccountId, awsInstanceId string) *url.UR
 }
 
 func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattestor.AttestResponse, error) {
-	joinToken := string(req.AttestedData.Data)
 
-	var attestedData common.IidAttestedData
+	var attestedData aia.IidAttestedData
 	err := json.Unmarshal(req.AttestedData.Data, &attestedData)
 	if err != nil {
 		err = fmt.Errorf("IID attestation attempted but an error occured while unmarshaling the attestation data: %v", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
-	var doc InstanceIdentityDocument
-	err := json.Unmarshal(attestedData.Document, &doc)
+	var doc aia.InstanceIdentityDocument
+	err = json.Unmarshal([]byte(attestedData.Document), &doc)
 	if err != nil {
 		err = fmt.Errorf("IID attestation attempted but an error occured while unmarshaling the IID: %v", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
@@ -93,13 +91,13 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	docHash, err := sha256.Sum256(attestedData.Document)
+	docHash := sha256.Sum256([]byte(attestedData.Document))
 	if err != nil {
 		err = fmt.Errorf("IID attestation attempted but an error occured hashing the IID: %v", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
-	err = rsa.VerifyPKCS1v15(p.awsCaCertPublicKey, crypto.SHA256, docHash[:], attestedData.Signature)
+	err = rsa.VerifyPKCS1v15(p.awsCaCertPublicKey, crypto.SHA256, docHash[:], []byte(attestedData.Signature))
 	if err != nil {
 		err = fmt.Errorf("IID attestation attempted but an error occured hashing the IID: %v", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
@@ -107,7 +105,7 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	resp := &nodeattestor.AttestResponse{
 		Valid:        true,
-		BaseSPIFFEID: p.spiffeID(doc.awsAccountId, doc.awsInstanceId).String(),
+		BaseSPIFFEID: p.spiffeID(doc.AccountId, doc.InstanceId).String(),
 	}
 
 	return resp, nil
@@ -117,7 +115,7 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 	resp := &spi.ConfigureResponse{}
 
 	// Parse HCL config payload into config struct
-	config := &JoinTokenConfig{}
+	config := &IIDAttestorConfig{}
 	hclTree, err := hcl.Parse(req.Configuration)
 	if err != nil {
 		resp.ErrorList = []string{err.Error()}
@@ -135,19 +133,20 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 
 	p.trustDomain = config.TrustDomain
 
-	caCertBytes, err := pem.Decode(awsCaCertPEM)
+	block, _ := pem.Decode([]byte(awsCaCertPEM))
+
+	awsCaCert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		resp.ErrorList = []string{err.Error()}
 		return resp, err
 	}
 
-	awsCaCert, err := x509.ParseCertificate(caCertBytes)
-	if err != nil {
+	var ok bool
+	p.awsCaCertPublicKey, ok = awsCaCert.PublicKey.(*rsa.PublicKey)
+	if !ok {
 		resp.ErrorList = []string{err.Error()}
 		return resp, err
 	}
-
-	p.awsCaCertPublicKey = awsCaCert.PublicKey
 
 	return &spi.ConfigureResponse{}, nil
 }
