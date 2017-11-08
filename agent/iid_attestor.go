@@ -15,6 +15,8 @@ import (
 	"github.com/spiffe/spire/proto/agent/nodeattestor"
 	"github.com/spiffe/spire/proto/common"
 	spi "github.com/spiffe/spire/proto/common/plugin"
+
+	"github.com/spiffe/aws-iid-attestor/common"
 )
 
 const (
