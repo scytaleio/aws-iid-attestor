@@ -7,40 +7,60 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"path"
 	"sync"
 	"time"
 
+	ec2 "github.com/aws/aws-sdk-go/service/ec2"
+
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/hcl"
 
 	spi "github.com/spiffe/spire/proto/common/plugin"
 	"github.com/spiffe/spire/proto/server/nodeattestor"
-
 	aia "github.com/spiffe/aws-iid-attestor/common"
+
+)
+
+/*
+
+aws ec2 describe-instances --instance-id <X>  --query Reservations[0].Instances[0].RootDeviceName
+aws ec2 describe-instances --instance-id <X>  --query Reservations[0].Instances[0].BlockDeviceMappings[?DeviceName==\`/dev/sda1\`].Ebs.AttachTime
+aws ec2 describe-instances --instance-id <X>  --query Reservations[0].Instances[0].NetworkInterfaces[0].Attachment.AttachTime
+
+
+// Ensure root device attachment and network interface 0 have attach times within X seconds of one another
+
+
+*/
+
+
+const (
+	pluginName = "iid_attestor"
 )
 
 const awsCaCertPEM = `-----BEGIN CERTIFICATE-----
-MIIC7TCCAq0CCQCWukjZ5V4aZzAJBgcqhkjOOAQDMFwxCzAJBgNVBAYTAlVTMRkw
-FwYDVQQIExBXYXNoaW5ndG9uIFN0YXRlMRAwDgYDVQQHEwdTZWF0dGxlMSAwHgYD
-VQQKExdBbWF6b24gV2ViIFNlcnZpY2VzIExMQzAeFw0xMjAxMDUxMjU2MTJaFw0z
-ODAxMDUxMjU2MTJaMFwxCzAJBgNVBAYTAlVTMRkwFwYDVQQIExBXYXNoaW5ndG9u
-IFN0YXRlMRAwDgYDVQQHEwdTZWF0dGxlMSAwHgYDVQQKExdBbWF6b24gV2ViIFNl
-cnZpY2VzIExMQzCCAbcwggEsBgcqhkjOOAQBMIIBHwKBgQCjkvcS2bb1VQ4yt/5e
-ih5OO6kK/n1Lzllr7D8ZwtQP8fOEpp5E2ng+D6Ud1Z1gYipr58Kj3nssSNpI6bX3
-VyIQzK7wLclnd/YozqNNmgIyZecN7EglK9ITHJLP+x8FtUpt3QbyYXJdmVMegN6P
-hviYt5JH/nYl4hh3Pa1HJdskgQIVALVJ3ER11+Ko4tP6nwvHwh6+ERYRAoGBAI1j
-k+tkqMVHuAFcvAGKocTgsjJem6/5qomzJuKDmbJNu9Qxw3rAotXau8Qe+MBcJl/U
-hhy1KHVpCGl9fueQ2s6IL0CaO/buycU1CiYQk40KNHCcHfNiZbdlx1E9rpUp7bnF
-lRa2v1ntMX3caRVDdbtPEWmdxSCYsYFDk4mZrOLBA4GEAAKBgEbmeve5f8LIE/Gf
-MNmP9CM5eovQOGx5ho8WqD+aTebs+k2tn92BBPqeZqpWRa5P/+jrdKml1qx4llHW
-MXrs3IgIb6+hUIB+S8dz8/mmO0bpr76RoZVCXYab2CZedFut7qc3WUH9+EUAH5mw
-vSeDCOUMYQR7R9LINYwouHIziqQYMAkGByqGSM44BAMDLwAwLAIUWXBlk40xTwSw
-7HX32MxXYruse9ACFBNGmdX2ZBrVNGrN9N2f6ROk0k9K
------END CERTIFICATE-----
-`
+MIIDIjCCAougAwIBAgIJAKnL4UEDMN/FMA0GCSqGSIb3DQEBBQUAMGoxCzAJBgNV
+BAYTAlVTMRMwEQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdTZWF0dGxlMRgw
+FgYDVQQKEw9BbWF6b24uY29tIEluYy4xGjAYBgNVBAMTEWVjMi5hbWF6b25hd3Mu
+Y29tMB4XDTE0MDYwNTE0MjgwMloXDTI0MDYwNTE0MjgwMlowajELMAkGA1UEBhMC
+VVMxEzARBgNVBAgTCldhc2hpbmd0b24xEDAOBgNVBAcTB1NlYXR0bGUxGDAWBgNV
+BAoTD0FtYXpvbi5jb20gSW5jLjEaMBgGA1UEAxMRZWMyLmFtYXpvbmF3cy5jb20w
+gZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAIe9GN//SRK2knbjySG0ho3yqQM3
+e2TDhWO8D2e8+XZqck754gFSo99AbT2RmXClambI7xsYHZFapbELC4H91ycihvrD
+jbST1ZjkLQgga0NE1q43eS68ZeTDccScXQSNivSlzJZS8HJZjgqzBlXjZftjtdJL
+XeE4hwvo0sD4f3j9AgMBAAGjgc8wgcwwHQYDVR0OBBYEFCXWzAgVyrbwnFncFFIs
+77VBdlE4MIGcBgNVHSMEgZQwgZGAFCXWzAgVyrbwnFncFFIs77VBdlE4oW6kbDBq
+MQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHU2Vh
+dHRsZTEYMBYGA1UEChMPQW1hem9uLmNvbSBJbmMuMRowGAYDVQQDExFlYzIuYW1h
+em9uYXdzLmNvbYIJAKnL4UEDMN/FMAwGA1UdEwQFMAMBAf8wDQYJKoZIhvcNAQEF
+BQADgYEAFYcz1OgEhQBXIwIdsgCOS8vEtiJYF+j9uO6jz7VOmJqO+pRlAbRlvY8T
+C1haGgSI/A1uZUKs/Zfnph0oEI0/hu1IIJ/SKBDtN5lvmZ/IzbOPIJWirlsllQIQ
+7zvWbGd9c9+Rm3p04oTvhup99la7kZqevJK0QRdD/6NpCKsqP/0=
+-----END CERTIFICATE-----`
 
 type IIDAttestorConfig struct {
 	TrustDomain string `hcl:"trust_domain"`
@@ -57,7 +77,7 @@ type IIDAttestorPlugin struct {
 }
 
 func (p *IIDAttestorPlugin) spiffeID(awsAccountId, awsInstanceId string) *url.URL {
-	spiffePath := path.Join("spiffe", "node-id", awsAccountId, awsInstanceId)
+	spiffePath := path.Join("spire", "agent", pluginName, awsAccountId, awsInstanceId)	
 	id := &url.URL{
 		Scheme: "spiffe",
 		Host:   p.trustDomain,
@@ -97,12 +117,31 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
-	err = rsa.VerifyPKCS1v15(p.awsCaCertPublicKey, crypto.SHA256, docHash[:], []byte(attestedData.Signature))
+	sigBytes, err := base64.StdEncoding.DecodeString(attestedData.Signature)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured hashing the IID: %v", err)
+		err = fmt.Errorf("IID attestation attempted but an error occured while base64 decoding the IID signature: %v", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
+	err = rsa.VerifyPKCS1v15(p.awsCaCertPublicKey, crypto.SHA256, docHash[:], sigBytes)
+	if err != nil {
+		err = fmt.Errorf("IID attestation attempted but an error occurred while verifying the cryptographic signature: %v", err)
+		return &nodeattestor.AttestResponse{Valid: false}, err
+	}
+
+	// Perform validations with the AWS EC2 API
+
+	query := ec2.DescribeInstancesInput {
+		InstanceIds: []string{doc.InstanceId}
+	}
+
+	result, err := ec2.DescribeInstances(query)
+	if err != nil {	
+		err = fmt.Errorf("IID attestation attempted but an error occurred while performing validations via describe-instance: %s", err)
+		return &nodeattestor.AttestResponse{Valid: false}, err
+	}
+
+s
 	resp := &nodeattestor.AttestResponse{
 		Valid:        true,
 		BaseSPIFFEID: p.spiffeID(doc.AccountId, doc.InstanceId).String(),
@@ -123,7 +162,7 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 	}
 	err = hcl.DecodeObject(&config, hclTree)
 	if err != nil {
-		err := fmt.Errorf("Error decoding AWS IID Attestor configuration: %s", err)		
+		err := fmt.Errorf("Error decoding AWS IID Attestor configuration: %v", err)
 		return resp, err
 	}
 
@@ -131,13 +170,13 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 
 	awsCaCert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		err := fmt.Errorf("Error reading the AWS CA Certificate in the AWS IID Attestor: %s", err)				
+		err := fmt.Errorf("Error reading the AWS CA Certificate in the AWS IID Attestor: %v", err)
 		return resp, err
 	}
 
 	awsCaCertPublicKey, ok := awsCaCert.PublicKey.(*rsa.PublicKey)
 	if !ok {
-		err := fmt.Errorf("Error extracting the AWS CA Certificate's public key in the AWS IID Attestor: %s", err)						
+		err := fmt.Errorf("Error extracting the AWS CA Certificate's public key in the AWS IID Attestor: %v", err)
 		return resp, err
 	}
 

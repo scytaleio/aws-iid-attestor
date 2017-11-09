@@ -20,17 +20,21 @@ import (
 )
 
 const (
-	pluginName           = "iid_attestor"
-	identityDocumentUrl  = "http://169.254.169.254/latest/dynamic/instance-identity/document"
-	identitySignatureUrl = "http://169.254.169.254/latest/dynamic/instance-identity/signature"
+	pluginName                  = "iid_attestor"
+	defaultIdentityDocumentUrl  = "http://169.254.169.254/latest/dynamic/instance-identity/document"
+	defaultIdentitySignatureUrl = "http://169.254.169.254/latest/dynamic/instance-identity/signature"
 )
 
 type IIDAttestorConfig struct {
-	TrustDomain string `hcl:"trust_domain"`
+	TrustDomain          string `hcl:"trust_domain"`
+	IdentityDocumentUrl  string `hcl:"identity_document_url"`
+	IdentitySignatureUrl string `hcl:"identity_signature_url"`
 }
 
 type IIDAttestorPlugin struct {
-	trustDomain string
+	trustDomain          string
+	identityDocumentUrl  string
+	identitySignatureUrl string
 
 	awsAccountId  string
 	awsInstanceId string
@@ -65,7 +69,7 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
-	docBytes, err := httpGetBytes(identityDocumentUrl)
+	docBytes, err := httpGetBytes(p.identityDocumentUrl)
 	if err != nil {
 		err = fmt.Errorf("IID attestation attempted but an error occured while retrieving the IID: %v", err)
 		return &nodeattestor.FetchAttestationDataResponse{}, err
@@ -81,13 +85,13 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 	p.awsAccountId = doc.AccountId
 	p.awsInstanceId = doc.InstanceId
 
-	sigBytes, err := httpGetBytes(identitySignatureUrl)
+	sigBytes, err := httpGetBytes(p.identitySignatureUrl)
 	if err != nil {
 		err = fmt.Errorf("IID attestation attempted but an error occured while retrieving the IID signature: %v", err)
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 
-	attestedData := IidAttestedData{
+	attestedData := aia.IidAttestedData{
 		Document:  string(docBytes),
 		Signature: string(sigBytes),
 	}
@@ -126,6 +130,7 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 		resp.ErrorList = []string{err.Error()}
 		return resp, err
 	}
+
 	err = hcl.DecodeObject(&config, hclTree)
 	if err != nil {
 		resp.ErrorList = []string{err.Error()}
@@ -134,6 +139,18 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 
 	// Set local vars from config struct
 	p.trustDomain = config.TrustDomain
+
+	if config.IdentityDocumentUrl != "" {
+		p.identityDocumentUrl = config.IdentityDocumentUrl
+	} else {
+		p.identityDocumentUrl = defaultIdentityDocumentUrl
+	}
+
+	if config.IdentitySignatureUrl != "" {
+		p.identitySignatureUrl = config.IdentitySignatureUrl
+	} else {
+		p.identitySignatureUrl = defaultIdentityDocumentUrl
+	}
 
 	return resp, nil
 }
