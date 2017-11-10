@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -20,7 +19,7 @@ import (
 )
 
 const (
-	pluginName                  = "iid_attestor"
+	pluginName                  = "aws_iid_attestor"
 	defaultIdentityDocumentUrl  = "http://169.254.169.254/latest/dynamic/instance-identity/document"
 	defaultIdentitySignatureUrl = "http://169.254.169.254/latest/dynamic/instance-identity/signature"
 )
@@ -71,14 +70,14 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 
 	docBytes, err := httpGetBytes(p.identityDocumentUrl)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured while retrieving the IID: %v", err)
+		err = aia.AttestationStepError("retrieving the IID from AWS", err)
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 
 	var doc aia.InstanceIdentityDocument
 	err = json.Unmarshal(docBytes, &doc)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured while unmarshalling the IID: %v", err)
+		err = aia.AttestationStepError("unmarshaling the IID", err)		
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 
@@ -87,7 +86,7 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 
 	sigBytes, err := httpGetBytes(p.identitySignatureUrl)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured while retrieving the IID signature: %v", err)
+		err = aia.AttestationStepError("retrieving the IID signature from AWS", err)
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 
@@ -98,7 +97,7 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 
 	respData, err := json.Marshal(attestedData)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured while marshaling the attested data: %v", err)
+		err = aia.AttestationStepError("marshaling the attested data", err)		
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 

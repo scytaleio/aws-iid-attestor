@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	pluginName = "iid_attestor"
+	pluginName = "aws_iid_attestor"
 
 	maxSecondsBetweenDeviceAttachments int64 = 60
 )
@@ -82,31 +82,31 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 	var attestedData aia.IidAttestedData
 	err := json.Unmarshal(req.AttestedData.Data, &attestedData)
 	if err != nil {
-		err = attestationStepError("unmarshaling the attestation data", err)
+		err = aia.AttestationStepError("unmarshaling the attestation data", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
 	var doc aia.InstanceIdentityDocument
 	err = json.Unmarshal([]byte(attestedData.Document), &doc)
 	if err != nil {
-		err = attestationStepError("unmarshaling the IID", err)
+		err = aia.AttestationStepError("unmarshaling the IID", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
 	if req.AttestedBefore {
-		err = attestationStepError("validating the IID", "the IID has been used and is no longer valid")
+		err = aia.AttestationStepError("validating the IID", fmt.Errorf("the IID has been used and is no longer valid"))
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
 	docHash := sha256.Sum256([]byte(attestedData.Document))
 	if err != nil {
-		err = attestationStepError("hashing the IID", err)
+		err = aia.AttestationStepError("hashing the IID", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
 	sigBytes, err := base64.StdEncoding.DecodeString(attestedData.Signature)
 	if err != nil {
-		err = attestationStepError("base64 decoding the IID signature", err)
+		err = aia.AttestationStepError("base64 decoding the IID signature", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
@@ -115,7 +115,7 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	err = rsa.VerifyPKCS1v15(p.awsCaCertPublicKey, crypto.SHA256, docHash[:], sigBytes)
 	if err != nil {
-		err = attestationStepError("verifying the cryptographic signature", err)
+		err = aia.AttestationStepError("verifying the cryptographic signature", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
@@ -131,7 +131,7 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	result, err := ec2Client.DescribeInstances(query)
 	if err != nil {
-		err = attestationStepError("querying AWS via describe-instances", err)
+		err = aia.AttestationStepError("querying AWS via describe-instances", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
@@ -141,7 +141,7 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	if ifaceZeroDeviceIndex != 0 {
 		innerErr := fmt.Errorf("DeviceIndex is %d", ifaceZeroDeviceIndex)
-		err = attestationStepError("verifying the EC2 instance's NetworkInterface[0].DeviceIndex is 0", innerErr)
+		err = aia.AttestationStepError("verifying the EC2 instance's NetworkInterface[0].DeviceIndex is 0", innerErr)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
@@ -157,7 +157,7 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	if rootDeviceIndex == -1 {
 		innerErr := fmt.Errorf("could not locate a device mapping with name '%s'", instance.RootDeviceName)
-		err = attestationStepError("locating the root device block mapping", innerErr)
+		err = aia.AttestationStepError("locating the root device block mapping", innerErr)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
@@ -167,7 +167,7 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	if attachTimeDisparitySeconds > maxSecondsBetweenDeviceAttachments {
 		innerErr := fmt.Errorf("root BlockDeviceMapping and NetworkInterface[0] attach times differ by %d seconds", attachTimeDisparitySeconds)
-		err = attestationStepError("checking the disparity device attach times", innerErr)
+		err = aia.AttestationStepError("checking the disparity device attach times", innerErr)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
@@ -177,10 +177,6 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 	}
 
 	return resp, nil
-}
-
-func attestationStepError(step string, cause error) error {
-	return fmt.Errorf("Attempted AWS IID attestation but an error occured %s: %s", step, err)
 }
 
 func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.ConfigureResponse, error) {
