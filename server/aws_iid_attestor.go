@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"path"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -58,7 +57,6 @@ type IIDAttestorConfig struct {
 }
 
 type IIDAttestorPlugin struct {
-	ConfigTime time.Time
 
 	trustDomain string
 
