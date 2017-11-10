@@ -77,7 +77,7 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 	var doc aia.InstanceIdentityDocument
 	err = json.Unmarshal(docBytes, &doc)
 	if err != nil {
-		err = aia.AttestationStepError("unmarshaling the IID", err)		
+		err = aia.AttestationStepError("unmarshaling the IID", err)
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 
@@ -97,7 +97,7 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 
 	respData, err := json.Marshal(attestedData)
 	if err != nil {
-		err = aia.AttestationStepError("marshaling the attested data", err)		
+		err = aia.AttestationStepError("marshaling the attested data", err)
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 

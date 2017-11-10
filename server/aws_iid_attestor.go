@@ -57,7 +57,6 @@ type IIDAttestorConfig struct {
 }
 
 type IIDAttestorPlugin struct {
-
 	trustDomain string
 
 	awsCaCertPublicKey *rsa.PublicKey
