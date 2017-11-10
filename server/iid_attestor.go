@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto"
+	"math"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/aws"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/hcl"
@@ -25,21 +28,12 @@ import (
 
 )
 
-/*
-
-aws ec2 describe-instances --instance-id <X>  --query Reservations[0].Instances[0].RootDeviceName
-aws ec2 describe-instances --instance-id <X>  --query Reservations[0].Instances[0].BlockDeviceMappings[?DeviceName==\`/dev/sda1\`].Ebs.AttachTime
-aws ec2 describe-instances --instance-id <X>  --query Reservations[0].Instances[0].NetworkInterfaces[0].Attachment.AttachTime
-
-
-// Ensure root device attachment and network interface 0 have attach times within X seconds of one another
-
-
-*/
 
 
 const (
 	pluginName = "iid_attestor"
+
+	maxSecondsBetweenDeviceAttachments = 60
 )
 
 const awsCaCertPEM = `-----BEGIN CERTIFICATE-----
@@ -119,7 +113,7 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	sigBytes, err := base64.StdEncoding.DecodeString(attestedData.Signature)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured while base64 decoding the IID signature: %v", err)
+		err = fmt.Errorf("IID attestation attempted but an error occured while base64 decoding the IID signature, %s: %v", attestedData.Signature, err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
@@ -131,17 +125,53 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	// Perform validations with the AWS EC2 API
 
-	query := ec2.DescribeInstancesInput {
-		InstanceIds: []string{doc.InstanceId}
+	sess := session.Must(session.NewSession())
+
+	ec2Client := ec2.New(sess, &aws.Config {
+		Region: &doc.Region,
+	})
+
+	query := &ec2.DescribeInstancesInput {
+		InstanceIds: []*string{&doc.InstanceId},
 	}
 
-	result, err := ec2.DescribeInstances(query)
+	result, err := ec2Client.DescribeInstances(query)
 	if err != nil {	
 		err = fmt.Errorf("IID attestation attempted but an error occurred while performing validations via describe-instance: %s", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
-s
+	instance := result.Reservations[0].Instances[0]
+
+	if *instance.NetworkInterfaces[0].Attachment.DeviceIndex != 0 {
+		err = fmt.Errorf("IID attestation attempted but a validation step failed: instance.NetworkInterfaces[0].Attachment.DeviceIndex != 0")
+		return &nodeattestor.AttestResponse{Valid: false}, err
+	}
+
+	netIfaceAttachTime := instance.NetworkInterfaces[0].Attachment.AttachTime
+
+	rootDeviceName := instance.RootDeviceName
+
+	rootDeviceIndex := -1
+	for i, bdm := range instance.BlockDeviceMappings {
+		if *bdm.DeviceName == *rootDeviceName {
+			rootDeviceIndex = i
+			break
+		}
+	}
+
+	if rootDeviceIndex == -1 {
+		err = fmt.Errorf("IID attestation attempted but a validation step failed: unable to locate the root device block mapping")
+		return &nodeattestor.AttestResponse{Valid: false}, err
+	}
+
+	rootDeviceAttachTime := instance.BlockDeviceMappings[rootDeviceIndex].Ebs.AttachTime
+
+	if int(math.Abs(float64(netIfaceAttachTime.Unix() - rootDeviceAttachTime.Unix()))) > maxSecondsBetweenDeviceAttachments {
+		err = fmt.Errorf("IID attestation attempted but a validation step failed: disparity between device attachments exceeds threshold")
+		return &nodeattestor.AttestResponse{Valid: false}, err
+	}
+
 	resp := &nodeattestor.AttestResponse{
 		Valid:        true,
 		BaseSPIFFEID: p.spiffeID(doc.AccountId, doc.InstanceId).String(),
