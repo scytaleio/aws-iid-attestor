@@ -33,7 +33,7 @@ import (
 const (
 	pluginName = "iid_attestor"
 
-	maxSecondsBetweenDeviceAttachments = 60
+	maxSecondsBetweenDeviceAttachments int64 = 60
 )
 
 const awsCaCertPEM = `-----BEGIN CERTIFICATE-----
@@ -80,54 +80,52 @@ func (p *IIDAttestorPlugin) spiffeID(awsAccountId, awsInstanceId string) *url.UR
 	return id
 }
 
+
 func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattestor.AttestResponse, error) {
 
 	var attestedData aia.IidAttestedData
 	err := json.Unmarshal(req.AttestedData.Data, &attestedData)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured while unmarshaling the attestation data: %v", err)
+		err = attestationStepError("unmarshaling the attestation data", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
 	var doc aia.InstanceIdentityDocument
 	err = json.Unmarshal([]byte(attestedData.Document), &doc)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured while unmarshaling the IID: %v", err)
+		err = attestationStepError("unmarshaling the IID", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
-	// Is it alright to dump the IID here?
 	if req.AttestedBefore {
-		err := fmt.Errorf("IID attestation attempted but the IID has been used and is no longer valid: %s", attestedData.Document)
+		err = attestationStepError("validating the IID", "the IID has been used and is no longer valid")
+		return &nodeattestor.AttestResponse{Valid: false}, err
+	}
+
+	docHash := sha256.Sum256([]byte(attestedData.Document))
+	if err != nil {
+		err = attestationStepError("hashing the IID", err)
+		return &nodeattestor.AttestResponse{Valid: false}, err
+	}
+
+	sigBytes, err := base64.StdEncoding.DecodeString(attestedData.Signature)
+	if err != nil {
+		err = attestationStepError("base64 decoding the IID signature", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	docHash := sha256.Sum256([]byte(attestedData.Document))
-	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured hashing the IID: %v", err)
-		return &nodeattestor.AttestResponse{Valid: false}, err
-	}
-
-	sigBytes, err := base64.StdEncoding.DecodeString(attestedData.Signature)
-	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occured while base64 decoding the IID signature, %s: %v", attestedData.Signature, err)
-		return &nodeattestor.AttestResponse{Valid: false}, err
-	}
-
 	err = rsa.VerifyPKCS1v15(p.awsCaCertPublicKey, crypto.SHA256, docHash[:], sigBytes)
 	if err != nil {
-		err = fmt.Errorf("IID attestation attempted but an error occurred while verifying the cryptographic signature: %v", err)
+		err = attestationStepError("verifying the cryptographic signature", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
-	// Perform validations with the AWS EC2 API
+	awsSession := session.Must(session.NewSession())
 
-	sess := session.Must(session.NewSession())
-
-	ec2Client := ec2.New(sess, &aws.Config {
+	ec2Client := ec2.New(awsSession, &aws.Config {
 		Region: &doc.Region,
 	})
 
@@ -136,39 +134,44 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 	}
 
 	result, err := ec2Client.DescribeInstances(query)
-	if err != nil {	
-		err = fmt.Errorf("IID attestation attempted but an error occurred while performing validations via describe-instance: %s", err)
+	if err != nil {
+		err = attestationStepError("querying AWS via describe-instances", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
 	instance := result.Reservations[0].Instances[0]
 
-	if *instance.NetworkInterfaces[0].Attachment.DeviceIndex != 0 {
-		err = fmt.Errorf("IID attestation attempted but a validation step failed: instance.NetworkInterfaces[0].Attachment.DeviceIndex != 0")
+	ifaceZeroDeviceIndex := *instance.NetworkInterfaces[0].Attachment.DeviceIndex
+
+	if ifaceZeroDeviceIndex != 0 {
+		innerErr := fmt.Errorf("DeviceIndex is %d", ifaceZeroDeviceIndex)
+		err = attestationStepError("verifying the EC2 instance's NetworkInterface[0].DeviceIndex is 0", innerErr)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
-	netIfaceAttachTime := instance.NetworkInterfaces[0].Attachment.AttachTime
-
-	rootDeviceName := instance.RootDeviceName
+	ifaceZeroAttachTime := instance.NetworkInterfaces[0].Attachment.AttachTime
 
 	rootDeviceIndex := -1
 	for i, bdm := range instance.BlockDeviceMappings {
-		if *bdm.DeviceName == *rootDeviceName {
+		if *bdm.DeviceName == *instance.RootDeviceName {
 			rootDeviceIndex = i
 			break
 		}
 	}
 
 	if rootDeviceIndex == -1 {
-		err = fmt.Errorf("IID attestation attempted but a validation step failed: unable to locate the root device block mapping")
+		innerErr := fmt.Errorf("could not locate a device mapping with name '%s'", instance.RootDeviceName)
+		err = attestationStepError("locating the root device block mapping", innerErr)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
 	rootDeviceAttachTime := instance.BlockDeviceMappings[rootDeviceIndex].Ebs.AttachTime
 
-	if int(math.Abs(float64(netIfaceAttachTime.Unix() - rootDeviceAttachTime.Unix()))) > maxSecondsBetweenDeviceAttachments {
-		err = fmt.Errorf("IID attestation attempted but a validation step failed: disparity between device attachments exceeds threshold")
+	attachTimeDisparitySeconds := int64(math.Abs(float64(ifaceZeroAttachTime.Unix() - rootDeviceAttachTime.Unix())))
+
+	if attachTimeDisparitySeconds > maxSecondsBetweenDeviceAttachments {
+		innerErr := fmt.Errorf("root BlockDeviceMapping and NetworkInterface[0] attach times differ by %d seconds", attachTimeDisparitySeconds)
+		err = attestationStepError("checking the disparity device attach times", innerErr)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
 
@@ -178,6 +181,10 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 	}
 
 	return resp, nil
+}
+
+func attestationStepError(step string, cause error) error {
+	return fmt.Errorf("Attempted AWS IID attestation but an error occured %s: %s", step, err)
 }
 
 func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.ConfigureResponse, error) {
