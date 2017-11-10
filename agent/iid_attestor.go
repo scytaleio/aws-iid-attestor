@@ -149,7 +149,7 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 	if config.IdentitySignatureUrl != "" {
 		p.identitySignatureUrl = config.IdentitySignatureUrl
 	} else {
-		p.identitySignatureUrl = defaultIdentityDocumentUrl
+		p.identitySignatureUrl = defaultIdentitySignatureUrl
 	}
 
 	return resp, nil
