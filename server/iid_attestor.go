@@ -2,33 +2,30 @@ package main
 
 import (
 	"crypto"
-	"math"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"encoding/base64"
 	"fmt"
+	"math"
 	"net/url"
 	"path"
 	"sync"
 	"time"
 
-	ec2 "github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/hcl"
 
+	aia "github.com/spiffe/aws-iid-attestor/common"
 	spi "github.com/spiffe/spire/proto/common/plugin"
 	"github.com/spiffe/spire/proto/server/nodeattestor"
-	aia "github.com/spiffe/aws-iid-attestor/common"
-
 )
-
-
 
 const (
 	pluginName = "iid_attestor"
@@ -71,7 +68,7 @@ type IIDAttestorPlugin struct {
 }
 
 func (p *IIDAttestorPlugin) spiffeID(awsAccountId, awsInstanceId string) *url.URL {
-	spiffePath := path.Join("spire", "agent", pluginName, awsAccountId, awsInstanceId)	
+	spiffePath := path.Join("spire", "agent", pluginName, awsAccountId, awsInstanceId)
 	id := &url.URL{
 		Scheme: "spiffe",
 		Host:   p.trustDomain,
@@ -79,7 +76,6 @@ func (p *IIDAttestorPlugin) spiffeID(awsAccountId, awsInstanceId string) *url.UR
 	}
 	return id
 }
-
 
 func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattestor.AttestResponse, error) {
 
@@ -125,11 +121,11 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 
 	awsSession := session.Must(session.NewSession())
 
-	ec2Client := ec2.New(awsSession, &aws.Config {
+	ec2Client := ec2.New(awsSession, &aws.Config{
 		Region: &doc.Region,
 	})
 
-	query := &ec2.DescribeInstancesInput {
+	query := &ec2.DescribeInstancesInput{
 		InstanceIds: []*string{&doc.InstanceId},
 	}
 
