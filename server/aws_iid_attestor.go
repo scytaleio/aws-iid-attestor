@@ -15,9 +15,9 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/aws/credentials"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/hcl"
@@ -55,18 +55,18 @@ C1haGgSI/A1uZUKs/Zfnph0oEI0/hu1IIJ/SKBDtN5lvmZ/IzbOPIJWirlsllQIQ
 
 type IIDAttestorConfig struct {
 	TrustDomain string `hcl:"trust_domain"`
-	access_id  string `hcl:"access_id"`
-	secret     string `hcl:"secret"`
-	session_id string `hcl:session_id`
+	access_id   string `hcl:"access_id"`
+	secret      string `hcl:"secret"`
+	session_id  string `hcl:session_id`
 }
 
 type IIDAttestorPlugin struct {
 	trustDomain string
 
 	awsCaCertPublicKey *rsa.PublicKey
-	accessId string
-	secret string
-	sessionId string
+	accessId           string
+	secret             string
+	sessionId          string
 
 	mtx *sync.Mutex
 }
@@ -120,7 +120,7 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 	}
 	creds := credentials.NewStaticCredentials(p.accessId, p.secret, p.sessionId)
 
-	awsSession := session.Must(session.NewSession(&aws.Config{Credentials:creds,Region:&doc.Region}))
+	awsSession := session.Must(session.NewSession(&aws.Config{Credentials: creds, Region: &doc.Region}))
 
 	ec2Client := ec2.New(awsSession)
 

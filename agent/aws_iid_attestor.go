@@ -104,7 +104,7 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 
 	resp := &nodeattestor.FetchAttestationDataResponse{
 		AttestedData: data,
-		SpiffeId:     p.spiffeID(doc.AccountId,doc.InstanceId).String(),
+		SpiffeId:     p.spiffeID(doc.AccountId, doc.InstanceId).String(),
 	}
 
 	return resp, nil
