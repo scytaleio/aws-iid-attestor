@@ -16,7 +16,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	ec2 "github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/hcl"
@@ -54,12 +55,18 @@ C1haGgSI/A1uZUKs/Zfnph0oEI0/hu1IIJ/SKBDtN5lvmZ/IzbOPIJWirlsllQIQ
 
 type IIDAttestorConfig struct {
 	TrustDomain string `hcl:"trust_domain"`
+	access_id  string `hcl:"access_id"`
+	secret     string `hcl:"secret"`
+	session_id string `hcl:session_id`
 }
 
 type IIDAttestorPlugin struct {
 	trustDomain string
 
 	awsCaCertPublicKey *rsa.PublicKey
+	accessId string
+	secret string
+	sessionId string
 
 	mtx *sync.Mutex
 }
@@ -96,10 +103,6 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 	}
 
 	docHash := sha256.Sum256([]byte(attestedData.Document))
-	if err != nil {
-		err = aia.AttestationStepError("hashing the IID", err)
-		return &nodeattestor.AttestResponse{Valid: false}, err
-	}
 
 	sigBytes, err := base64.StdEncoding.DecodeString(attestedData.Signature)
 	if err != nil {
@@ -115,12 +118,11 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 		err = aia.AttestationStepError("verifying the cryptographic signature", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
+	creds := credentials.NewStaticCredentials(p.accessId, p.secret, p.sessionId)
 
-	awsSession := session.Must(session.NewSession())
+	awsSession := session.Must(session.NewSession(&aws.Config{Credentials:creds,Region:&doc.Region}))
 
-	ec2Client := ec2.New(awsSession, &aws.Config{
-		Region: &doc.Region,
-	})
+	ec2Client := ec2.New(awsSession)
 
 	query := &ec2.DescribeInstancesInput{
 		InstanceIds: []*string{&doc.InstanceId},
@@ -211,6 +213,9 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 
 	p.trustDomain = config.TrustDomain
 	p.awsCaCertPublicKey = awsCaCertPublicKey
+	p.accessId = config.access_id
+	p.secret = config.secret
+	p.sessionId = config.session_id
 
 	return &spi.ConfigureResponse{}, nil
 }
@@ -226,14 +231,10 @@ func New() nodeattestor.NodeAttestor {
 }
 
 func main() {
-	p := &IIDAttestorPlugin{
-		mtx: &sync.Mutex{},
-	}
-
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: nodeattestor.Handshake,
 		Plugins: map[string]plugin.Plugin{
-			"join_token": nodeattestor.NodeAttestorPlugin{NodeAttestorImpl: p},
+			pluginName: nodeattestor.NodeAttestorPlugin{NodeAttestorImpl: New()},
 		},
 		GRPCServer: plugin.DefaultGRPCServer,
 	})

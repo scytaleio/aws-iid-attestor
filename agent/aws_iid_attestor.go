@@ -35,14 +35,11 @@ type IIDAttestorPlugin struct {
 	identityDocumentUrl  string
 	identitySignatureUrl string
 
-	awsAccountId  string
-	awsInstanceId string
-
 	mtx *sync.RWMutex
 }
 
-func (p *IIDAttestorPlugin) spiffeID() *url.URL {
-	spiffePath := path.Join("spire", "agent", pluginName, p.awsAccountId, p.awsInstanceId)
+func (p *IIDAttestorPlugin) spiffeID(awsAccountId, awsInstanceId string) *url.URL {
+	spiffePath := path.Join("spire", "agent", pluginName, awsAccountId, awsInstanceId)
 	id := &url.URL{
 		Scheme: "spiffe",
 		Host:   p.trustDomain,
@@ -81,9 +78,6 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 		return &nodeattestor.FetchAttestationDataResponse{}, err
 	}
 
-	p.awsAccountId = doc.AccountId
-	p.awsInstanceId = doc.InstanceId
-
 	sigBytes, err := httpGetBytes(p.identitySignatureUrl)
 	if err != nil {
 		err = aia.AttestationStepError("retrieving the IID signature from AWS", err)
@@ -110,7 +104,7 @@ func (p *IIDAttestorPlugin) FetchAttestationData(req *nodeattestor.FetchAttestat
 
 	resp := &nodeattestor.FetchAttestationDataResponse{
 		AttestedData: data,
-		SpiffeId:     p.spiffeID().String(),
+		SpiffeId:     p.spiffeID(doc.AccountId,doc.InstanceId).String(),
 	}
 
 	return resp, nil
