@@ -55,9 +55,9 @@ C1haGgSI/A1uZUKs/Zfnph0oEI0/hu1IIJ/SKBDtN5lvmZ/IzbOPIJWirlsllQIQ
 
 type IIDAttestorConfig struct {
 	TrustDomain string `hcl:"trust_domain"`
-	access_id   string `hcl:"access_id"`
-	secret      string `hcl:"secret"`
-	session_id  string `hcl:session_id`
+	AccessId    string `hcl:"access_id"`
+	Secret      string `hcl:"secret"`
+	SessionId   string `hcl:"session_id"`
 }
 
 type IIDAttestorPlugin struct {
@@ -213,9 +213,9 @@ func (p *IIDAttestorPlugin) Configure(req *spi.ConfigureRequest) (*spi.Configure
 
 	p.trustDomain = config.TrustDomain
 	p.awsCaCertPublicKey = awsCaCertPublicKey
-	p.accessId = config.access_id
-	p.secret = config.secret
-	p.sessionId = config.session_id
+	p.accessId = config.AccessId
+	p.secret = config.Secret
+	p.sessionId = config.SessionId
 
 	return &spi.ConfigureResponse{}, nil
 }
