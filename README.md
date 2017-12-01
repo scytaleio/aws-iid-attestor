@@ -31,7 +31,8 @@ pluginData {
     access_id = "<aws_access_key_id>"
     secret = "<aws_access_secret_key>"
     trust_domain = "example.org"
-}```
+}
+```
 
 The `pluginName` should be `"aws_iid_attestor"` and matches the name used in plugin ServeConfig.
 The  `pluginCmd` should specify the path to the server IID attestor binary.
