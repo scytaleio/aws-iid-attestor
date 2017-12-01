@@ -3,6 +3,7 @@ utils = github.com/goreleaser/goreleaser \
 		github.com/golang/dep/cmd/dep
 
 gopath := $(shell go env GOPATH)
+
 .PHONY: all build dep utils test clean
 
 build: $(binary_dirs)
