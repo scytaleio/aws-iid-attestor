@@ -1,0 +1,23 @@
+
+project_name: nodeattestor-aws_iid
+
+builds:
+  - main: agent/aws_iid_attestor.go
+    binary: plugin/agent/nodeattestor-aws_iid
+    goos:
+      - linux
+    goarch:
+      - amd64
+  - main: server/aws_iid_attestor.go
+    binary: plugin/server/nodeattestor-aws_iid
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+archive:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  # wrap_in_directory: true
+  replacements:
+    amd64: x86_64
+
