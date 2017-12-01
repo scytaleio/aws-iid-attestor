@@ -71,7 +71,8 @@ enabled = true
 pluginType = "NodeAttestor"
 pluginData {
 	trust_domain = "example.org"
-}```
+}
+```
 
 The `pluginName` should be `"aws_iid_attestor"` and matches the name used in plugin ServeConfig.
 The  `pluginCmd` should specify the path to the agent IID attestor binary.
@@ -84,7 +85,7 @@ Remove join-token attestor config, only one type of node attestation is supporte
 
 rm ~/opt/spire-<version>/conf/agent/plugin/join-token.conf
 
-### Start SPIRE agent
+### Start SPIRE Agent
 
 Verify `ServerAddress` in <SPIRE Installation Directory>/conf/agent/agent.conf is set to the SPIRE Server's private IP start the SPIRE Agent.
 
