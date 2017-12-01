@@ -1,0 +1,22 @@
+sudo: false
+dist: trusty
+
+language: go
+
+script:
+    - make utils
+    - make vendor
+    - make build
+    - make release
+
+deploy:
+    - provider: releases
+      api_key: $GITHUB_TOKEN
+      file_glob: true
+      file:
+          - dist/*txt
+          - dist/*gz
+      skip_cleanup: true
+      on:
+          tags: true
+          condition: $GITHUB_TOKEN != ""
