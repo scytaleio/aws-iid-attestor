@@ -43,9 +43,9 @@ Configuration under `pluginData` are specific to the server IID attestor plugin 
      `secret` specifies the AWS access secret key corresponding to the `access_id`
      `trust_domain` should corresponds to the configured [ trust_domain ](https://github.com/spiffe/spire/blob/master/doc/spire_server.md#server-configuration-file) of the SPIRE deployment.
 
-### Start SPIRE server
+### Start SPIRE Server
 
-Verify `BindAddress` in <SPIRE Installation Directory>/conf/server/server.conf is set to the private IP of the ec2 instance and start the server.
+Verify `BindAddress` in <SPIRE Installation Directory>/conf/server/server.conf is set to the private IP of the ec2 instance and start the SPIRE Server.
 
      cd <SPIRE Installation Directory>
       ./spire-server run
