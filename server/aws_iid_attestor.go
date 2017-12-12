@@ -118,9 +118,15 @@ func (p *IIDAttestorPlugin) Attest(req *nodeattestor.AttestRequest) (*nodeattest
 		err = aia.AttestationStepError("verifying the cryptographic signature", err)
 		return &nodeattestor.AttestResponse{Valid: false}, err
 	}
-	creds := credentials.NewStaticCredentials(p.accessId, p.secret, p.sessionId)
 
-	awsSession := session.Must(session.NewSession(&aws.Config{Credentials: creds, Region: &doc.Region}))
+	var awsSession *session.Session
+
+	if p.secret != "" && p.accessId != "" {
+		creds := credentials.NewStaticCredentials(p.accessId, p.secret, p.sessionId)
+		awsSession = session.Must(session.NewSession(&aws.Config{Credentials: creds, Region: &doc.Region}))
+	} else {
+		awsSession = session.Must(session.NewSession(&aws.Config{Region: &doc.Region}))
+	}
 
 	ec2Client := ec2.New(awsSession)
 
