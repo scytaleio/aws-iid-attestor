@@ -1,3 +1,7 @@
+# DEPRECATION NOTICE
+
+This code has been merged directly into [SPIRE](https://github.com/spiffe/spire), and as a result, this repository is **deprecated**. Please use the builtin plugin instead.
+
 ## Overview
 
 The AWS IID attestor is a plugin for the SPIRE Agent and SPIRE Server that allows SPIRE to automatically attest instances using the AWS Instance Metadata API and the AWS Instance Identity document. It also allows an operator to use AWS Instance IDs when defining SPIFFE ID attestation policies. This plugin is also a pre-requisite for the AWS node resolver plugin.
